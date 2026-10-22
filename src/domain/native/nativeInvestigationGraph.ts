@@ -306,6 +306,7 @@ export const joinInterfaceBuilderDispatch = (
     if (typeof selector !== "string" || selector.length === 0) continue;
     const selectorNodeId = selectorNodesByAction.get(action.id);
     if (selectorNodeId === undefined) continue;
+    examined += 1;
     const destinationEdge = edges.find(
       (edge) =>
         edge.resolution === "observed" &&
@@ -321,7 +322,6 @@ export const joinInterfaceBuilderDispatch = (
     )
       continue;
     const owner = nodes.get(destinationEdge.to);
-    examined += 1;
     const declaredClass = owner?.attributes.class_name;
     const className =
       typeof declaredClass === "string" &&
