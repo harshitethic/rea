@@ -377,7 +377,12 @@ const observedPattern = (
 ): z.infer<typeof observedPatternSchema> => {
   if (staticStatus === "truncated" || runtimeStatus === "truncated")
     return "truncated";
-  if (staticStatus === "unknown" || runtimeStatus === "unknown")
+  if (
+    staticStatus === "unknown" ||
+    runtimeStatus === "unknown" ||
+    staticStatus === "contradiction" ||
+    runtimeStatus === "contradiction"
+  )
     return "unknown";
   const staticChanged = staticStatus !== "unchanged";
   const runtimeChanged = runtimeStatus !== "unchanged";

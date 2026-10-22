@@ -1,3 +1,6 @@
+import { ARTIFACT_COMPARISON_EXAMPLE } from "../contracts/artifactComparisonExample.js";
+import { compareArtifacts } from "./artifactComparison.js";
+import { ARTIFACT_COMPARISON_PROVIDER } from "./comparisonEvidenceIdentity.js";
 import { describe, expect, it } from "vitest";
 
 import { INVESTIGATION_EXAMPLES } from "../contracts/investigationExamples.js";
@@ -334,4 +337,64 @@ describe("static/runtime correlation", () => {
       /closure disagrees with its source parameters/u,
     );
   });
+});
+
+it("does not treat an artifact integrity contradiction as a static content change", () => {
+  const { left, right } = ARTIFACT_COMPARISON_EXAMPLE;
+  const comparison = compareArtifacts(left, right);
+  const runtime = processComparison("changed");
+  for (const classification of ["contradiction", "changed"] as const) {
+    const evidence = createEvidence(undefined, ARTIFACT_COMPARISON_PROVIDER, {
+      predicateType: "rea.artifact-comparison",
+      operation: "compare_artifacts",
+      parameters: {
+        left_evidence_ids: [left.evidence_id],
+        right_evidence_ids: [right.evidence_id],
+      },
+      result: jsonValueSchema.parse({
+        ...comparison,
+        status: classification,
+        changes: comparison.changes.map((change) => ({
+          ...change,
+          classification,
+          dimensions: [
+            classification === "contradiction" ? "integrity" : "content",
+          ],
+        })),
+        summary: {
+          ...comparison.summary,
+          changed: classification === "changed" ? 1 : 0,
+          contradiction: classification === "contradiction" ? 1 : 0,
+        },
+      }),
+      confidence: "derived",
+      authority: "analyst-inference",
+      evidenceLinks: [left.evidence_id, right.evidence_id],
+    });
+    const input = mapping(runtime, "cochanged");
+    const result = correlateStaticAndRuntime({
+      ...input,
+      static_comparisons: [evidence],
+      mappings: [
+        {
+          ...input.mappings[0],
+          static: {
+            comparison_evidence_id: evidence.evidence_id,
+            selector: { kind: "artifact", logical_path: "." },
+          },
+        },
+      ],
+    });
+    const item = result.correlations.items[0];
+    expect(item?.static.status).toBe(classification);
+    expect(item?.classification).toBe(
+      classification === "contradiction" ? "unresolved_branch" : "hypothesis",
+    );
+    expect(result.summary.hypotheses).toBe(
+      classification === "contradiction" ? 0 : 1,
+    );
+    expect(item?.evidence_links).toEqual(
+      expect.arrayContaining([left.evidence_id, right.evidence_id]),
+    );
+  }
 });
