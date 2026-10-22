@@ -19,7 +19,10 @@ import type { WebNetworkCaptureRecord } from "../webNetworkCapture.js";
 import { analysisViewInputError } from "./analysisViewErrors.js";
 import type { AnalysisViewParent } from "./analysisView.js";
 import type { WebNetworkProjectionAccumulator } from "./WebNetworkProjectionAccumulator.js";
-import { textBytes } from "./webNetworkRouteTemplates.js";
+import {
+  readRecordedRequestLine,
+  textBytes,
+} from "./webNetworkRouteTemplates.js";
 
 type RequestEvent = Extract<BrowserScenarioEvent, { kind: "request" }>;
 type ContentEvent = Extract<BrowserScenarioEvent, { kind: "network-content" }>;
@@ -143,12 +146,13 @@ const record = (
   const responseContent = onlyContent(index, response?.sequence);
   const body = retainedBody(responseContent);
   const mimeType = mediaType(responseContent) ?? "";
+  const requestRecord = reportedRequest(request, requestContent, purpose);
   return {
     record: {
       ordinal,
       location,
       reported: {
-        request: reportedRequest(request, requestContent, purpose),
+        request: requestRecord,
         ...(response === undefined
           ? {}
           : {
@@ -176,7 +180,9 @@ const record = (
               },
             ],
     },
-    represented: !request.url.redacted,
+    represented:
+      readRecordedRequestLine({ request: requestRecord }, false, () => true)
+        ?.kind === "line",
     body: body !== undefined,
     redacted: body?.redacted === true,
   };
