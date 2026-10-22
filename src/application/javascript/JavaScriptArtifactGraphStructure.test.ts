@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { summarizeElectronBoundaries } from "./ElectronBoundaryAnalysis.js";
+import { addElectronNativeBoundaries } from "./ElectronBoundaryGraphNative.js";
 import { createHash } from "node:crypto";
 
 import type { ArtifactInventorySnapshot } from "../../domain/artifactInventorySnapshot.js";
@@ -374,5 +376,60 @@ it.each([
         ]),
       );
     }
+  },
+);
+
+it.each(["addon.node.js", "addon.node", null])(
+  "associates requested native exports only with a native artifact: %s",
+  (artifactName) => {
+    const source = 'const { hello } = require("./addon.node");';
+    const file = {
+      ...skippedFile(),
+      text: { included: true as const, value: source },
+    };
+    const candidate: JavaScriptArtifactFile = {
+      ...skippedFile(),
+      path: artifactName ?? "missing",
+      kind: artifactName === "addon.node" ? "native-addon" : "javascript",
+    };
+    const files = artifactName === null ? [file] : [file, candidate];
+    const analysis = analysisFor(
+      files.map((entry) => ({
+        file: entry,
+        javascript:
+          entry === file ? analyzeJavaScriptStaticSource(source) : null,
+        semantic: null,
+      })),
+    );
+    const base = contextFor(file, analysis);
+    const context: JavaScriptArtifactGraphContext = {
+      ...base,
+      fileSet: { ...base.fileSet, files },
+      filesByPath: new Map(files.map((entry) => [entry.path, entry])),
+    };
+    addJavaScriptArtifactFiles(context);
+    addElectronNativeBoundaries(context);
+    expect(summarizeElectronBoundaries(analysis)).toMatchObject({
+      native_addon_bindings: 1,
+      resolved_native_addon_bindings: artifactName === "addon.node" ? 1 : 0,
+    });
+    const nodes = context.accumulator.nodes();
+    const bindings = nodes.filter(({ kind }) => kind === "native-export");
+    expect(bindings).toHaveLength(1);
+    expect(bindings[0]?.observations[0]?.properties.resolved_path).toBe(
+      artifactName,
+    );
+    const associations = context.accumulator
+      .edges()
+      .filter(
+        ({ evidence }) =>
+          evidence.extractor.operation ===
+          "associate-native-addon-requested-exports",
+      );
+    expect(associations).toHaveLength(artifactName === "addon.node" ? 1 : 0);
+    for (const edge of associations)
+      expect(
+        nodes.find(({ node_id }) => node_id === edge.source_node_id)?.kind,
+      ).toBe("native-addon");
   },
 );

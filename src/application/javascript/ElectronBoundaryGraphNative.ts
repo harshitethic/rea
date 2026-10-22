@@ -114,7 +114,7 @@ const addNativeBinding = (input: NativeBindingInput): void => {
       "Requested JavaScript members are not verified native exports.",
     ],
   });
-  if (addon === undefined || resolved === null) return;
+  if (addon?.kind !== "native-addon" || resolved === null) return;
   addElectronInferenceEdge(context, {
     source: addon,
     target: binding,
