@@ -819,3 +819,45 @@ it("interns each distinct evidence context once under its content digest", () =>
   );
   expect(registry.resolve(repeated)).toEqual(elsewhere);
 });
+
+it.each(["unknown", "unavailable", "partial"] as const)(
+  "rejects contradictory truncated %s coverage at creation and intake",
+  (status) => {
+    const input = {
+      ...semanticFixtureInput(),
+      limitations: ["Fixture projection reached its declared limit."],
+    };
+    const coverage = {
+      ...input.coverage,
+      status,
+      truncated: true,
+      omitted_nodes: status === "partial" ? 0 : null,
+      omitted_relations: status === "partial" ? 0 : null,
+      limits: [{ name: "semantic_nodes", value: 1, unit: "items" as const }],
+    };
+    expect(() => createJavaScriptSemanticGraph({ ...input, coverage })).toThrow(
+      /Truncated graph coverage/u,
+    );
+    const valid = createJavaScriptSemanticGraph({
+      ...input,
+      coverage: {
+        ...coverage,
+        status: "partial",
+        omitted_nodes: null,
+        omitted_relations: null,
+      },
+    });
+    const { graph_id: _id, ...record } = valid;
+    const changed = { ...record, coverage };
+    const parsed = javaScriptSemanticGraphSchema.safeParse({
+      ...changed,
+      graph_id: `jsrg_${digestCanonicalValue(changed, "JavaScript semantic graph")}`,
+    });
+    expect(parsed.success).toBe(false);
+    expect(
+      parseJavaScriptSemanticGraph(
+        JSON.parse(serializeJavaScriptSemanticGraph(valid)),
+      ),
+    ).toEqual(valid);
+  },
+);

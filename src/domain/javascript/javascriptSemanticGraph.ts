@@ -307,6 +307,24 @@ function* checkCoverageSteps(
       path: ["coverage"],
       message: "Complete graph coverage cannot omit or truncate semantic facts",
     });
+  if (graph.coverage.truncated && graph.coverage.status !== "partial")
+    context.addIssue({
+      code: "custom",
+      path: ["coverage", "status"],
+      message: "Truncated graph coverage must be partial",
+    });
+  if (
+    graph.coverage.truncated &&
+    graph.coverage.omitted_nodes === 0 &&
+    graph.coverage.omitted_relations === 0 &&
+    omittedUnknowns.length === 0
+  )
+    context.addIssue({
+      code: "custom",
+      path: ["coverage"],
+      message:
+        "Truncated graph coverage must retain positive or unknown omission counts",
+    });
   if (graph.coverage.truncated && graph.coverage.limits.length === 0)
     context.addIssue({
       code: "custom",
