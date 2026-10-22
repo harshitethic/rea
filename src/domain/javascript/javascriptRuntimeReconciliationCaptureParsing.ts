@@ -243,7 +243,12 @@ const parseElectronCapture = (
     evidence,
     inspection,
     captureSha256: digestCanonicalValue(inspection, "Runtime reconciliation"),
-    scriptsCompleteWithinScope: scriptsComplete(inspection.completeness),
+    // Missing worker discovery can hide code even when page scripts are complete.
+    scriptsCompleteWithinScope:
+      scriptsComplete(inspection.completeness) &&
+      !inspection.completeness.unavailable_sections.includes("workers") &&
+      !inspection.completeness.truncated_sections.includes("workers") &&
+      !inspection.completeness.attach_limited_sections.includes("workers"),
   };
 };
 
