@@ -383,13 +383,25 @@ it.each(["addon.node.js", "addon.node", null])(
   "associates requested native exports only with a native artifact: %s",
   (artifactName) => {
     const source = 'const { hello } = require("./addon.node");';
+    const sourceSha256 = createHash("sha256").update(source).digest("hex");
+    const candidateSource = "module.exports = { hello() {} };";
+    const candidateSha256 = createHash("sha256")
+      .update(candidateSource)
+      .digest("hex");
     const file = {
       ...skippedFile(),
+      sha256: sourceSha256,
+      inventory_artifact_id: `art_${sourceSha256}`,
+      bytes: Buffer.byteLength(source),
       text: { included: true as const, value: source },
     };
     const candidate: JavaScriptArtifactFile = {
       ...skippedFile(),
       path: artifactName ?? "missing",
+      sha256: candidateSha256,
+      inventory_artifact_id: `art_${candidateSha256}`,
+      bytes: Buffer.byteLength(candidateSource),
+      text: { included: true, value: candidateSource },
       kind: artifactName === "addon.node" ? "native-addon" : "javascript",
     };
     const files = artifactName === null ? [file] : [file, candidate];
