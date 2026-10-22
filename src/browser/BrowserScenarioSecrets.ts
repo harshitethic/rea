@@ -398,7 +398,15 @@ export class BrowserScenarioSecrets {
       return { value_state: "redacted-secret", value_sha256: null };
     return {
       value_state: "hashed",
-      value_sha256: createHash("sha256").update(value).digest("hex"),
+      // Preserve existing UTF-8 digests for well-formed strings. Lone
+      // surrogates need lossless code units; FF FE separates that encoding
+      // from every valid UTF-8 byte sequence, including literal escape text.
+      value_sha256: !/[\uD800-\uDFFF]/u.test(value)
+        ? createHash("sha256").update(value).digest("hex")
+        : createHash("sha256")
+            .update(Buffer.from([0xff, 0xfe]))
+            .update(value, "utf16le")
+            .digest("hex"),
     };
   }
 }

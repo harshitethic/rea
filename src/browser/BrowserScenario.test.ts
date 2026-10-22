@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import { BrowserScenarioSecrets } from "./BrowserScenarioSecrets.js";
@@ -359,5 +360,39 @@ describe("browserScenarioSchema secret declarations", () => {
         browser: { ...scenario.browser, cleanup: "close-browser" },
       }).success,
     ).toBe(false);
+  });
+});
+
+it("preserves storage code units without changing well-formed fingerprints", () => {
+  const secrets = BrowserScenarioSecrets.resolve(
+    browserScenarioSchema.parse(baseScenario()),
+    {
+      REA_TEST_SESSION: "session-secret",
+      REA_TEST_PASSWORD: "password",
+      REA_TEST_COOKIE: "cookie",
+    },
+  );
+  if (secrets === undefined) throw new Error("Expected resolved secrets");
+  const values = [
+    "\ud800",
+    "\ud801",
+    "\udc00",
+    "\ufffd",
+    "text-a",
+    "text-b",
+    "😀",
+  ];
+  const fingerprints = values.map(
+    (value) => secrets.fingerprint(value).value_sha256,
+  );
+  expect(new Set(fingerprints).size).toBe(values.length);
+  expect(secrets.fingerprint("\ud800")).toEqual(secrets.fingerprint("\ud800"));
+  for (const value of ["", "plain", "😀", "\ufffd"])
+    expect(secrets.fingerprint(value).value_sha256).toBe(
+      createHash("sha256").update(value).digest("hex"),
+    );
+  expect(secrets.fingerprint("\ud800password")).toEqual({
+    value_state: "redacted-secret",
+    value_sha256: null,
   });
 });
