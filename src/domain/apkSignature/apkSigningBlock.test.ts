@@ -204,21 +204,40 @@ describe("Zip64 end-of-central-directory", () => {
       .u32(0xffffffff)
       .u32(0xffffffff)
       .u16(0);
-    const tail = parseZipTail(
-      Uint8Array.from([
-        ...body.b,
-        ...cd.b,
-        ...record.b,
-        ...locator.b,
-        ...eocd.b,
-      ]),
-    );
+    const bytes = Uint8Array.from([
+      ...body.b,
+      ...cd.b,
+      ...record.b,
+      ...locator.b,
+      ...eocd.b,
+    ]);
+    const tail = parseZipTail(bytes);
     expect(tail.ok).toBe(true);
     if (!tail.ok) return;
     expect(tail.value.centralDirectoryOffset).toBe(cdOffset);
     expect(tail.value.centralDirectorySize).toBe(cd.b.length);
     // Entry count comes from the Zip64 record, not the saturated EOCD field.
     expect(tail.value.totalEntries).toBe(1);
+    const damaged = bytes.slice();
+    damaged[recordOffset] = 0;
+    expect(parseZipTail(damaged)).toMatchObject({
+      ok: false,
+      error: {
+        kind: "malformed-zip",
+        offset: recordOffset,
+        detail: "malformed Zip64 EOCD record",
+      },
+    });
+    const outOfBounds = bytes.slice();
+    new DataView(outOfBounds.buffer).setBigUint64(
+      recordOffset + record.b.length + 8,
+      BigInt(bytes.length),
+      true,
+    );
+    expect(parseZipTail(outOfBounds)).toMatchObject({
+      ok: false,
+      error: { kind: "malformed-zip" },
+    });
   });
 
   it("takes the Zip64 entry count when only the 16-bit count saturates", () => {

@@ -147,13 +147,18 @@ const centralDirectoryOffset = (
     });
   }
   const recordOffset = u64(dv, locator + 8);
+  if (recordOffset === null)
+    return err({
+      kind: "zip64-unsupported",
+      detail: "Zip64 EOCD offset exceeds safe range",
+    });
   if (
-    recordOffset === null ||
     recordOffset + 56 > locator ||
     dv.getUint32(recordOffset, true) !== ZIP64_EOCD_SIGNATURE
   )
     return err({
-      kind: "zip64-unsupported",
+      kind: "malformed-zip",
+      offset: recordOffset,
       detail: "malformed Zip64 EOCD record",
     });
   const z64Offset = u64(dv, recordOffset + 48);
