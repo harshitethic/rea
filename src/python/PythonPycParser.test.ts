@@ -1340,3 +1340,24 @@ it("leaves 3.11 alpha magics with other code layouts unsupported", () => {
     parse(pythonPycFixture("py311", { magic: 3495 })).header,
   ).toMatchObject({ python_version: "3.11", code_layout: "py311" });
 });
+
+it.each([
+  ["a" + "😀".repeat(40), "a" + "😀".repeat(39), true],
+  ["a" + "😀".repeat(40) + "z", "a" + "😀".repeat(39), true],
+  ["a" + "😀".repeat(39), "a" + "😀".repeat(39), false],
+  ["😀".repeat(40), "😀".repeat(40), false],
+  ["z".repeat(81), "z".repeat(80), true],
+] as const)(
+  "keeps complete Unicode scalars in bounded constant previews (%s)",
+  (source, preview, truncated) => {
+    const bytes = Buffer.from(source);
+    const report = parse(withConsts([marshalUnicode(bytes)]));
+    expect(root(report).consts[0]).toEqual({
+      kind: "str",
+      value: preview,
+      bytes: bytes.length,
+      truncated,
+    });
+    expect(pythonPycSchema.safeParse(report).success).toBe(true);
+  },
+);

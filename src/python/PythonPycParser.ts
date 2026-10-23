@@ -1558,13 +1558,23 @@ const buildConstSummary = (value: MarshalValue): PythonPycConst => {
       return { kind: "float", value: jsonFloat(value.value) };
     case "str": {
       const truncated = value.value.length > PYTHON_PYC_CONST_PREVIEW_LIMIT;
+      let end = PYTHON_PYC_CONST_PREVIEW_LIMIT;
+      // Retain the UTF-16 budget without cutting a source surrogate pair.
+      const preceding = value.value.charCodeAt(end - 1);
+      const following = value.value.charCodeAt(end);
+      if (
+        truncated &&
+        preceding >= 0xd800 &&
+        preceding <= 0xdbff &&
+        following >= 0xdc00 &&
+        following <= 0xdfff
+      )
+        end -= 1;
       return {
         kind: "str",
         bytes: value.bytes,
         truncated,
-        value: truncated
-          ? value.value.slice(0, PYTHON_PYC_CONST_PREVIEW_LIMIT)
-          : value.value,
+        value: truncated ? value.value.slice(0, end) : value.value,
       };
     }
     case "bytes":
