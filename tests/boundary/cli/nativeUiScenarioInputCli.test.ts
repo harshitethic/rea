@@ -1,4 +1,7 @@
-import { describe, expect } from "vitest";
+import { Ajv2020 } from "ajv/dist/2020.js";
+import { describe, expect, it } from "vitest";
+
+import { serveCli } from "./cliServeHarness.js";
 
 import { cliTest } from "../../support/cli/cliFixture.js";
 import type { TestCli } from "../../support/cli/cliFixture.js";
@@ -22,17 +25,14 @@ const runCapture = async (cli: TestCli, steps: string | undefined) => {
 
 describe("native UI scenario CLI input", () => {
   cliTest(
-    "rejects omitted steps under the shared scenario contract",
+    "rejects omitted steps before invoking the scenario handler",
     async ({ cli }) => {
       const result = await runCapture(cli, undefined);
 
       expect(result.exitCode).not.toBe(0);
       expect(result.json).toMatchObject({
-        code: "invalid_request",
-        details: {
-          operation: "capture_native_ui_scenario",
-          issues: [{ path: ["steps"], reason: "missing_argument" }],
-        },
+        code: "VALIDATION_ERROR",
+        fieldErrors: [{ path: "steps", missing: true, expected: "string" }],
       });
     },
   );
@@ -94,4 +94,21 @@ describe("native UI scenario CLI input", () => {
       expect(result.stdout).toContain("Unknown flag: --steps");
     },
   );
+});
+
+it("advertises steps as required in the scenario options schema", async () => {
+  const result = await serveCli([
+    "capture-native-ui-scenario",
+    "--schema",
+    "--json",
+  ]);
+  const output = JSON.parse(result.stdout) as {
+    options: Parameters<Ajv2020["compile"]>[0];
+  };
+  const validate = new Ajv2020({ strict: false }).compile(output.options);
+  const scope = { pid: 1, windowId: 1 };
+  expect(validate(scope)).toBe(false);
+  expect(
+    validate({ ...scope, steps: '[{"kind":"wait","milliseconds":0}]' }),
+  ).toBe(true);
 });
