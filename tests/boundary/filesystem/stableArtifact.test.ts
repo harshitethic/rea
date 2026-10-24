@@ -58,7 +58,9 @@ it("reads a multi-chunk stable snapshot without retaining and concatenating ever
   try {
     const actual = await readStableArtifact(path, source.length);
     expect(actual.bytes).toEqual(source);
-    expect(actual.sha256).toBe(createHash("sha256").update(source).digest("hex"));
+    expect(actual.sha256).toBe(
+      createHash("sha256").update(source).digest("hex"),
+    );
     expect(concat).not.toHaveBeenCalled();
   } finally {
     concat.mockRestore();
