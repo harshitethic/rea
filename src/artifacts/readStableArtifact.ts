@@ -109,7 +109,17 @@ export const readStableArtifact = async (
           "integrity",
           `Artifact changed before open: ${path}`,
         );
-      const chunks: Buffer[] = [];
+      // Keep one bounded destination buffer instead of holding every streamed
+      // chunk and allocating a second full-size Buffer.concat result.
+      if (initial.size > BigInt(maximumBytes))
+        throw new ArtifactReaderFailure(
+          "limit",
+          `Selected artifact grew beyond its byte limit: ${path}`,
+          { boundary: "file-size" },
+        );
+      const expectedBytes = Number(initial.size);
+      const bytes = Buffer.allocUnsafe(expectedBytes);
+      const digest = createHash("sha256");
       let count = 0;
       for await (const chunk of file.createReadStream({
         autoClose: false,
@@ -122,15 +132,21 @@ export const readStableArtifact = async (
             "format",
             `Artifact stream did not return bytes: ${path}`,
           );
-        const bytes = value;
-        count += bytes.length;
-        if (count > maximumBytes)
+        const nextCount = count + value.length;
+        if (nextCount > maximumBytes)
           throw new ArtifactReaderFailure(
             "limit",
             `Selected artifact grew beyond its byte limit: ${path}`,
             { boundary: "file-size" },
           );
-        chunks.push(bytes);
+        if (nextCount > expectedBytes)
+          throw new ArtifactReaderFailure(
+            "integrity",
+            `Artifact changed during read: ${path}`,
+          );
+        value.copy(bytes, count);
+        digest.update(value);
+        count = nextCount;
       }
       const after = await file.stat({ bigint: true });
       const current = await afterValidation(path, "during read", () =>
@@ -145,10 +161,9 @@ export const readStableArtifact = async (
           `Artifact changed during read: ${path}`,
         );
       assertArtifactReadActive(signal);
-      const bytes = Buffer.concat(chunks, count);
       return {
         bytes,
-        sha256: createHash("sha256").update(bytes).digest("hex"),
+        sha256: digest.digest("hex"),
       };
     },
   );
