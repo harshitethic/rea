@@ -8,7 +8,7 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { expect, it, onTestFinished } from "vitest";
+import { expect, it, onTestFinished, vi } from "vitest";
 import { readStableArtifact } from "../../../src/artifacts/readStableArtifact.js";
 import {
   artifactFileCompletion,
@@ -45,6 +45,24 @@ it("reads exact binary and empty bytes and rejects symlink/size/cancellation bou
     reason: "cancelled",
     cause: controller.signal.reason,
   });
+});
+
+it("reads a multi-chunk stable snapshot without retaining and concatenating every chunk", async () => {
+  const root = await createTestTempDirectory("rea-stable-chunk-copy-");
+  const path = join(root, "selected.bin");
+  const source = Buffer.alloc(1024 * 1024 + 17);
+  for (let index = 0; index < source.length; index++)
+    source[index] = index % 251;
+  await writeFile(path, source);
+  const concat = vi.spyOn(Buffer, "concat");
+  try {
+    const actual = await readStableArtifact(path, source.length);
+    expect(actual.bytes).toEqual(source);
+    expect(actual.sha256).toBe(createHash("sha256").update(source).digest("hex"));
+    expect(concat).not.toHaveBeenCalled();
+  } finally {
+    concat.mockRestore();
+  }
 });
 
 const checkChange = async (
