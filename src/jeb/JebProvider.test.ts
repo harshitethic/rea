@@ -172,6 +172,27 @@ describe("JebProvider observations and failures", () => {
     expect(result.error.message).toContain("ECONNREFUSED");
   });
 
+  it("retains the selected loopback endpoint for direct connection failures", async () => {
+    const provider = providerWith(
+      scriptedConnection({
+        get_client_information: new Error("Connection refused"),
+      }),
+    );
+    const result = await provider.execute({
+      operation: "inspect_jeb_client",
+      input: {},
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("Expected unavailable JEB connection");
+    expect(result.error).toBeInstanceOf(AnalysisCapabilityUnavailableError);
+    expect(result.error.diagnostics).toEqual({
+      endpoint: "http://127.0.0.1:8425/mcp",
+    });
+    expect(projectAnalysisError(result.error).details).toMatchObject({
+      diagnostics: { endpoint: "http://127.0.0.1:8425/mcp" },
+    });
+  });
+
   it("maps transport failures during an operation to provider unavailability", async () => {
     const provider = providerWith(
       scriptedConnection({
