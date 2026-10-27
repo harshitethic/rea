@@ -152,6 +152,7 @@ export const registerCoreNativeCommands = (
       path: z.string().describe("Local native executable or app path"),
       procedure: z
         .string()
+        .min(1)
         .describe("Explicit native procedure symbol or address"),
     }),
     options: z.object({
