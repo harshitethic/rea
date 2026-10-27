@@ -582,6 +582,7 @@ export class JebProvider implements JebAnalysisPort {
       {
         cause,
         userMessage: JEB_CONNECTION_REMEDIATION,
+        diagnostics: { endpoint: this.#endpoint.toString() },
       },
     );
   }
