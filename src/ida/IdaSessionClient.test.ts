@@ -1979,6 +1979,46 @@ it.each(["idb_close", "idb_list", "connection_close"])(
   },
 );
 
+it("retains the selected sanitized HTTP endpoint on IDA transport failure", async () => {
+  const { root, target } = await createIdaTarget();
+  roots.push(root);
+  const producer = new RecordingIdaMcp(target, "attached");
+  const selected = "http://127.0.0.1:18425/mcp?token=synthetic-secret#frag";
+  const client = new IdaSessionClient(
+    {
+      mode: "attached",
+      url: selected,
+      headers: {},
+      timeoutMs: 1000,
+      workspaceRoot: root,
+    },
+    target,
+    producer,
+  );
+  vi.spyOn(producer, "connect").mockRejectedValue(
+    new ProviderAdapterError("ida", "transport", {
+      diagnostics: { reason: "Synthetic HTTP 404" },
+    }),
+  );
+  try {
+    const result = await client.execute("health", {});
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("Expected transport refusal");
+    const projection = projectAnalysisError(result.error);
+    expect(projection).toMatchObject({
+      details: {
+        diagnostics: {
+          reason: "Synthetic HTTP 404",
+          endpoint: "http://127.0.0.1:18425/mcp",
+        },
+      },
+    });
+    expect(JSON.stringify(projection)).not.toContain("synthetic-secret");
+  } finally {
+    await client.close();
+  }
+});
+
 it("binds retained transport diagnostics to the requested operation and recovery", async () => {
   const { producer, client } = await fixture("attached");
   await client.execute("health", {});
