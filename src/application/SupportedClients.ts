@@ -560,6 +560,13 @@ export const SUPPORTED_CLIENT_DEFINITIONS = [
       join(env.GEMINI_CLI_HOME || home, ".gemini", "settings.json"),
     markerPath: ({ home, env }: ClientPathContext) =>
       join(env.GEMINI_CLI_HOME || home, ".gemini"),
+    // Antigravity uses .gemini/config, so the shared .gemini parent alone
+    // cannot establish that Gemini CLI is installed.
+    discoveryPaths: ({ home, env }: ClientPathContext) => [
+      join(env.GEMINI_CLI_HOME || home, ".gemini", "settings.json"),
+      join(env.GEMINI_CLI_HOME || home, ".gemini", "trustedFolders.json"),
+      join(env.GEMINI_CLI_HOME || home, ".gemini", "commands"),
+    ],
     skillPath: ({ home, env }: ClientPathContext) =>
       join(env.GEMINI_CLI_HOME || home, ".agents", "skills"),
     format: "json",
