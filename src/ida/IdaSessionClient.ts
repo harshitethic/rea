@@ -454,6 +454,17 @@ export class IdaSessionClient implements AnalysisClient {
     options: ExecutionOptions | undefined,
     context: IdaOperationFailureContext,
   ) {
+    // Only the credential-free identity is diagnostic. Query strings may
+    // contain credentials, even though URL userinfo is rejected by admission.
+    const selectedEndpoint =
+      "url" in this.config
+        ? (() => {
+            const url = new URL(this.config.url);
+            return `${url.origin}${url.pathname}`;
+          })()
+        : undefined;
+    const endpointFacts =
+      selectedEndpoint === undefined ? {} : { endpoint: selectedEndpoint };
     const artifactFailure =
       cause instanceof ArtifactReaderFailure ? cause : undefined;
     if (artifactFailure !== undefined)
@@ -501,6 +512,7 @@ export class IdaSessionClient implements AnalysisClient {
       failure = analysisClientFailureForOperation(cause, "ida", operation, {
         recovery:
           "Check the configured upstream MCP registration and selected target; see docs/ida-provider.md.",
+        ...endpointFacts,
       }).bindCleanupResourceOwner(cause);
     else if (cause instanceof AnalysisError) failure = cause;
     else if (cause instanceof z.ZodError)
@@ -517,6 +529,7 @@ export class IdaSessionClient implements AnalysisClient {
             cause instanceof Error ? cause.message : "Unknown upstream failure",
           recovery:
             "Check the configured upstream MCP registration and selected target; see docs/ida-provider.md.",
+          ...endpointFacts,
         },
       });
     if (artifactFailure?.cleanup !== undefined) {
