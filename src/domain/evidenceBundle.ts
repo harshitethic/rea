@@ -1,6 +1,6 @@
 import { withEvidenceSubjectDeclaration } from "./evidenceSubject.js";
 import { digestSchema } from "./digests.js";
-import { EvidenceIntegrityError } from "./evidenceErrors.js";
+import { EvidenceFileError, EvidenceIntegrityError } from "./evidenceErrors.js";
 import { err, ok, type Result } from "./result.js";
 import { describeValidationFailure } from "./validationFailure.js";
 import { equalJsonText } from "./jsonSerialization.js";
@@ -302,14 +302,21 @@ const parseBundle = (input: unknown, seal: boolean): EvidenceBundle => {
 /** Read a source bundle while preserving unexpected implementation failures. */
 export const readEvidenceBundle = (
   input: unknown,
-): Result<EvidenceBundle, EvidenceIntegrityError> => {
+): Result<EvidenceBundle, EvidenceIntegrityError | EvidenceFileError> => {
   const parsed = safeParseEvidenceBundle(input);
   if (parsed.ok) return parsed;
-  const { cause } = parsed.error;
+  const { cause, kind, message } = parsed.error;
+  if (kind === "single-record")
+    return err(
+      new EvidenceFileError("read", "wrong-kind", {
+        cause,
+        userMessage: message,
+      }),
+    );
   return err(
-    new EvidenceIntegrityError(cause.message, {
+    new EvidenceIntegrityError("Evidence bundle validation failed", {
       cause,
-      userMessage: cause.message,
+      userMessage: message,
     }),
   );
 };
