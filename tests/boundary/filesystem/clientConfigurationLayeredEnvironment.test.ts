@@ -185,6 +185,22 @@ it.skipIf(process.platform !== "win32").each([
   },
 );
 
+it("attributes an invalid proposed override to setup rather than an unchanged client file", async () => {
+  const f = await layered({ CALLER_KEY: "retain" }, {});
+  const result = await readClientConfigurationFiles(
+    f.client,
+    undefined,
+    process.platform,
+    { REA_ASAR_MAX_HEADER_BYTES: "0" },
+  );
+  expect(result.ok).toBe(false);
+  if (result.ok) throw new Error("Expected invalid proposed override");
+  expect(result.error.detail).toContain("REA_ASAR_MAX_HEADER_BYTES");
+  expect(result.error.detail).toContain("proposed setup environment");
+  expect(result.error.detail).not.toContain("Repair it before rerunning setup");
+  await f.unchanged();
+});
+
 it("validates language/compiler settings in the effective OpenCode environment", async () => {
   const fixture = await layered(
     { REA_GHIDRA_LANGUAGE_ID: language },
