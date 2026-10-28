@@ -33,6 +33,35 @@ interface CliJsonLinesInput {
   readonly filterPaths: ReturnType<typeof Filter.parse> | undefined;
 }
 
+/**
+ * Summary Evidence may already have been atomically published before the
+ * output formatter sees an incompatible JSONL selection. Never lose its
+ * confirmed delivery receipt when presenting that refusal.
+ */
+const publishedEvidenceReceipt = (
+  source: unknown,
+): { readonly path: string; readonly bytes: number } | undefined => {
+  if (typeof source !== "object" || source === null || Array.isArray(source))
+    return undefined;
+  if (
+    !Object.hasOwn(source, "summary") ||
+    !Object.hasOwn(source, "evidence_bundle")
+  )
+    return undefined;
+  const bundle: unknown = (source as { evidence_bundle: unknown })
+    .evidence_bundle;
+  if (typeof bundle !== "object" || bundle === null || Array.isArray(bundle))
+    return undefined;
+  const receipt = bundle as { path?: unknown; bytes?: unknown };
+  return typeof receipt.path === "string" &&
+    receipt.path.length > 0 &&
+    typeof receipt.bytes === "number" &&
+    Number.isSafeInteger(receipt.bytes) &&
+    receipt.bytes >= 0
+    ? { path: receipt.path, bytes: receipt.bytes }
+    : undefined;
+};
+
 /** Render one already classified result, sharing a plan for output and counting. */
 export const writeCliJsonLines = async (
   options: CliJsonLinesInput,
@@ -66,7 +95,22 @@ export const writeCliJsonLines = async (
         })
       : undefined;
   if (plan?.ok === false) {
-    error = projectAnalysisError(plan.error);
+    const projected = projectAnalysisError(plan.error);
+    const receipt = publishedEvidenceReceipt(source);
+    error =
+      receipt === undefined
+        ? projected
+        : {
+            ...projected,
+            details: {
+              ...(typeof projected.details === "object" &&
+              projected.details !== null &&
+              !Array.isArray(projected.details)
+                ? projected.details
+                : {}),
+              evidence_bundle: receipt,
+            },
+          };
     failureRecord = jsonLinesErrorRecord(
       options.fullOutput ? { ok: false, error, meta } : error,
     );
