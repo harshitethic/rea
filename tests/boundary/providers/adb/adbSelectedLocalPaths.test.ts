@@ -11,6 +11,7 @@ import { dirname, join } from "node:path";
 import { expect, onTestFinished, test, vi } from "vitest";
 
 import { AdbProvider } from "../../../../src/adb/AdbProvider.js";
+import { projectAnalysisError } from "../../../../src/domain/analysisErrorProjection.js";
 import { AdbDeviceAnalysisService } from "../../../../src/application/adb/AdbDeviceAnalysisService.js";
 import { PrivateRuntimeRoot } from "../../../../src/process/PrivateRuntimeRoot.js";
 import { createTestTempDirectory } from "../../../fixtures/temporaryDirectory.js";
@@ -25,6 +26,43 @@ const png = Buffer.from(
 );
 const digest = (bytes: string | Buffer) =>
   createHash("sha256").update(bytes).digest("hex");
+
+it.each([
+  "pull_adb_file",
+  "capture_adb_screen",
+  "collect_adb_bugreport",
+] as const)(
+  "identifies a regular file selected as output_directory for %s",
+  async (operation) => {
+    const f = await fixture();
+    const selected = join(f.root, "blocked-output");
+    await writeFile(selected, "must not overwrite");
+    const input = {
+      serial: "fixture",
+      output_directory: selected,
+      ...(operation === "pull_adb_file"
+        ? { device_path: "/data/local/tmp/probe.bin" }
+        : {}),
+    };
+    const result = await f.service.execute(operation, input);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("Expected output-directory refusal");
+    expect(projectAnalysisError(result.error)).toMatchObject({
+      code: "invalid_request",
+      category: "invalid_input",
+      details: {
+        issues: [
+          {
+            path: ["output_directory"],
+            reason: "invalid_value",
+            observed: { path: selected, kind: "not-directory" },
+          },
+        ],
+      },
+    });
+    expect(await readFile(selected, "utf8")).toBe("must not overwrite");
+  },
+);
 
 it.each(["path", "explicit"] as const)(
   "uses the captured %s launcher environment for both ADB probing and device queries",
