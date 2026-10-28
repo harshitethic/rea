@@ -1647,12 +1647,22 @@ const scanWithOwnershipEvidence = async (
           !processIdentityHasExited(identityAfter),
       )
       .map(({ process }) => process);
-    if (vanishedTokenRows.length > 0) {
-      const confirmed = await readNativeProcessIdentityMap(
-        vanishedTokenRows,
-        host,
-      );
+    // After a SIGKILL or cancellation, an environ-open ESRCH can precede
+    // visible native exit by a few scheduling ticks. Allow a small bounded
+    // native-only settlement window; never infer exit from the failed token.
+    // Still-live generations remain explicit cleanup failures.
+    let pending = vanishedTokenRows;
+    for (
+      let attempt = 0;
+      attempt < TOKEN_READ_RETRY_ATTEMPTS + 1 && pending.length > 0;
+      attempt += 1
+    ) {
+      if (attempt > 0) await delay(TOKEN_READ_RETRY_DELAY_MS);
+      const confirmed = await readNativeProcessIdentityMap(pending, host);
+      const pendingPids = new Set(pending.map(({ pid }) => pid));
+      const nextPending = new Set<number>();
       facts = facts.map((fact) => {
+        if (!pendingPids.has(fact.process.pid)) return fact;
         const after = confirmed.get(fact.process.pid);
         if (after?.state === "absent")
           return { ...fact, state: "absent" as const, identityAfter: after };
@@ -1670,8 +1680,10 @@ const scanWithOwnershipEvidence = async (
           };
         if (processIdentityHasExited(after))
           return { ...fact, identityAfter: after };
+        nextPending.add(fact.process.pid);
         return fact;
       });
+      pending = pending.filter(({ pid }) => nextPending.has(pid));
     }
   }
 

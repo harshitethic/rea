@@ -324,7 +324,15 @@ itOnLinux(
   },
 );
 
-it.each(["absent", "live", "reused", "unknown", "reused-zombie"] as const)(
+it.each([
+  "absent",
+  "delayed-absent",
+  "live",
+  "reused",
+  "delayed-reused",
+  "unknown",
+  "reused-zombie",
+] as const)(
   "resolves a Linux token-read exit race after final sweep retry: %s",
   async (lastIdentity) => {
     const row: ProcessTableEntry = {
@@ -354,9 +362,13 @@ it.each(["absent", "live", "reused", "unknown", "reused-zombie"] as const)(
       processIdentities: async (members) =>
         new Map<number, ProcessIdentityObservation>(
           members.map(({ pid }) => {
-            if (tokenReads < 4 || ++readsAfterLastToken < 3)
+            if (tokenReads < 4) return [pid, live] as const;
+            readsAfterLastToken += 1;
+            const delayed = lastIdentity.startsWith("delayed-");
+            if (readsAfterLastToken < (delayed ? 5 : 3))
               return [pid, live] as const;
             switch (lastIdentity) {
+              case "delayed-absent":
               case "absent":
                 return [
                   pid,
@@ -365,6 +377,7 @@ it.each(["absent", "live", "reused", "unknown", "reused-zombie"] as const)(
                     reason: "not-found-in-caller-pid-namespace",
                   },
                 ] as const;
+              case "delayed-reused":
               case "reused":
                 return [
                   pid,
@@ -399,7 +412,11 @@ it.each(["absent", "live", "reused", "unknown", "reused-zombie"] as const)(
     };
     const result = await verifyNoTokenOwnedProcesses("run-token", host);
     expect(tokenReads).toBe(4);
-    if (lastIdentity === "absent")
+    // A live process is not repeatedly scanned without a fixed upper bound.
+    expect(readsAfterLastToken).toBeLessThanOrEqual(6);
+    if (lastIdentity === "delayed-absent" || lastIdentity === "delayed-reused")
+      expect(readsAfterLastToken).toBe(5);
+    if (lastIdentity === "absent" || lastIdentity === "delayed-absent")
       expect(result).toEqual({ cleaned: true, signaled: false });
     else
       expect(result).toMatchObject({
@@ -407,7 +424,7 @@ it.each(["absent", "live", "reused", "unknown", "reused-zombie"] as const)(
         failures: [
           {
             pid: 902,
-            reason: lastIdentity.startsWith("reused")
+            reason: lastIdentity.includes("reused")
               ? "process-identity-unavailable"
               : "environment-unreadable",
           },
