@@ -1,7 +1,10 @@
 import { reconstructionCoverageScope } from "./reconstructionCoverageScope.js";
 import { z } from "zod";
 import { AnalysisInputError } from "./analysisErrorCore.js";
-import type { EvidenceIntegrityError } from "./evidenceErrors.js";
+import type {
+  EvidenceFileError,
+  EvidenceIntegrityError,
+} from "./evidenceErrors.js";
 import { projectInputIssues } from "./inputIssueProjection.js";
 import { err, ok, type Result } from "./result.js";
 
@@ -220,7 +223,7 @@ export const readReconstructionCoverageData = (
   path: readonly (string | number)[] = [],
 ): Result<
   ParsedReconstructionCoverage,
-  AnalysisInputError | EvidenceIntegrityError
+  AnalysisInputError | EvidenceIntegrityError | EvidenceFileError
 > => {
   const parsed = coverageEnvelopeSchema.safeParse(input);
   if (!parsed.success)
