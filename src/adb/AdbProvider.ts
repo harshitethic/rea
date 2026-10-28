@@ -452,11 +452,34 @@ const prepareOutputDirectory = async (
     await mkdir(root, { recursive: true });
     await access(root, fsConstants.W_OK);
   } catch (cause) {
+    const existing = await stat(root).catch(() => null);
+    const kind =
+      existing === null
+        ? "unavailable"
+        : existing.isDirectory()
+          ? "not-writable"
+          : "not-directory";
     return err(
-      new AnalysisOutputError(
+      new AnalysisInputError(
         operation,
-        `The output directory is not writable or could not be created: ${root}`,
-        { cause },
+        {
+          cause,
+          userMessage:
+            "The selected output_directory is not a writable directory.",
+          remediationAction:
+            "Select a writable directory rather than a regular file, or correct its creation/access permissions.",
+        },
+        [
+          {
+            path: ["output_directory"],
+            reason: "invalid_value",
+            message:
+              kind === "not-directory"
+                ? "The selected path is not a directory"
+                : "The selected directory cannot be created or written",
+            observed: { path: directory, kind },
+          },
+        ],
       ),
     );
   }
