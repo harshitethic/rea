@@ -162,6 +162,29 @@ describe("IL2CPP global-metadata version 39", () => {
   });
 });
 
+describe("IL2CPP generic-parameter structural admission", () => {
+  it.each([31, 39] as const)(
+    "rejects partial generic-parameter rows without native linking in version %i",
+    (version) => {
+      const fixture = createIl2cppMetadataFixture({
+        version,
+        genericOwners: true,
+      });
+      expect(readIl2cppMetadata(fixture.bytes).metadata_version).toBe(version);
+      const damaged = Buffer.from(fixture.bytes);
+      const current = fixture.section("genericParameters").size;
+      expect(current).toBeGreaterThan(1);
+      damaged.writeInt32LE(
+        current - 1,
+        fixture.header("genericParameters", "size"),
+      );
+      rejects(damaged, "record-size-mismatch");
+      const linked = failure(damaged, readIl2cppMetadataForLinking);
+      expect(linked.reason).toBe("record-size-mismatch");
+    },
+  );
+});
+
 describe("rejected IL2CPP global-metadata", () => {
   it("rejects an unrecognized magic and other versions as unsupported", () => {
     rejects(
