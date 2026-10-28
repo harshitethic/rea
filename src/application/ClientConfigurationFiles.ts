@@ -22,11 +22,42 @@ export interface ClientConfigurationSource extends ClientConfigurationDocument {
 const invalidEnvironment = (
   path: string,
   error: ConfigurationError,
-): ClientConfigurationFileError => ({
-  kind: "malformed",
-  path,
-  detail: `Configuration ${path} has an invalid REA server environment: ${error.settings.map(({ setting, constraint }) => `${setting}: ${constraint}`).join("; ")}. Repair it before rerunning setup.`,
-});
+  proposed?: Readonly<Record<string, string>>,
+): ClientConfigurationFileError => {
+  const proposedFailures = error.settings.filter(
+    ({ setting }) => proposed !== undefined && Object.hasOwn(proposed, setting),
+  );
+  const storedFailures = error.settings.filter(
+    ({ setting }) =>
+      proposed === undefined || !Object.hasOwn(proposed, setting),
+  );
+  const describe = (settings: typeof error.settings): string =>
+    settings
+      .map(({ setting, constraint }) => setting + ": " + constraint)
+      .join("; ");
+  return {
+    kind: "malformed",
+    path,
+    detail: [
+      ...(proposedFailures.length === 0
+        ? []
+        : [
+            "The proposed setup environment contains invalid REA server settings: " +
+              describe(proposedFailures) +
+              ". Correct or remove the setup launch override; the client file is not the source of these values.",
+          ]),
+      ...(storedFailures.length === 0
+        ? []
+        : [
+            "Configuration " +
+              path +
+              " has an invalid REA server environment: " +
+              describe(storedFailures) +
+              ". Repair it before rerunning setup.",
+          ]),
+    ].join(" "),
+  };
+};
 
 /** A named source failure that setup can explain without losing the bad path. */
 export interface ClientConfigurationFileError {
@@ -110,7 +141,7 @@ export const readClientConfigurationFiles = async (
         platform,
       );
       if (!environment.ok)
-        return err(invalidEnvironment(path, environment.error));
+        return err(invalidEnvironment(path, environment.error, writeOverrides));
       documents.push({ ...document.value, sourcePath: path });
     }
   }
@@ -121,7 +152,9 @@ export const readClientConfigurationFiles = async (
     platform,
   );
   if (!environment.ok)
-    return err(invalidEnvironment(client.configPath, environment.error));
+    return err(
+      invalidEnvironment(client.configPath, environment.error, writeOverrides),
+    );
   return ok(documents);
 };
 
