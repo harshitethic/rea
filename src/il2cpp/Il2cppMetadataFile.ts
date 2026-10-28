@@ -841,16 +841,25 @@ const createGenericContainerReaders = (tables: MetadataTables) => {
   };
 };
 
-/** Own the row layout once; unused generic names allocate no arrays or strings. */
-const createGenericParameterReader = (tables: MetadataTables) => {
-  const parameters = tables.section("genericParameters"),
-    width = tables.widths.generic_container + 12;
+/** Validate generic parameter row extents independently of native linking. */
+const validatedGenericParameterCount = (
+  parameters: Il2cppMetadataSection,
+  width: number,
+): number => {
   const count = entriesIn(parameters, width);
   if (parameters.count !== null && count !== parameters.count)
     throw new Il2cppMetadataFormatFailure(
       "record-size-mismatch",
       "generic parameter count disagrees with its extent",
     );
+  return count;
+};
+
+/** Own the row layout once; unused generic names allocate no arrays or strings. */
+const createGenericParameterReader = (tables: MetadataTables) => {
+  const parameters = tables.section("genericParameters"),
+    width = tables.widths.generic_container + 12;
+  const count = validatedGenericParameterCount(parameters, width);
   return (index: number): string | undefined => {
     if (!Number.isInteger(index) || index < 0 || index >= count)
       return undefined;
@@ -905,6 +914,10 @@ function* readMetadataCoreSteps(
   const layout = VERSION_LAYOUTS[version];
   const widths =
     layout.indexing === "counted" ? resolveWidths(section) : FIXED_WIDTHS;
+  validatedGenericParameterCount(
+    section("genericParameters"),
+    widths.generic_container + 12,
+  );
   const expected = il2cppMetadataRecordBytes(widths, version);
   let tables: MetadataTables = {
     bytes,
