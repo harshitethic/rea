@@ -905,6 +905,10 @@ function* readMetadataCoreSteps(
   const layout = VERSION_LAYOUTS[version];
   const widths =
     layout.indexing === "counted" ? resolveWidths(section) : FIXED_WIDTHS;
+  // Fixed-version interface offsets encode one int32 TypeIndex and one int32 offset.
+  // Counted layouts validate this record width while recovering TypeIndex.
+  if (layout.indexing === "fixed")
+    entriesIn(section("interfaceOffsets"), widths.type + 4);
   const expected = il2cppMetadataRecordBytes(widths, version);
   let tables: MetadataTables = {
     bytes,
