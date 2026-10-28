@@ -4,6 +4,7 @@ import { once } from "node:events";
 import { expect, it, vi } from "vitest";
 import {
   cleanupOwnedProcessGroup,
+  verifyNoTokenOwnedProcesses,
   type ProcessIdentityObservation,
   type ProcessOwnershipHost,
   type ProcessTableEntry,
@@ -320,5 +321,98 @@ itOnLinux(
         await once(child, "exit");
       }
     }
+  },
+);
+
+it.each(["absent", "live", "reused", "unknown", "reused-zombie"] as const)(
+  "resolves a Linux token-read exit race after final sweep retry: %s",
+  async (lastIdentity) => {
+    const row: ProcessTableEntry = {
+      pid: 902,
+      parentPid: 1,
+      processGroupId: 902,
+      state: "S",
+      command: "short-lived-worker",
+    };
+    const live: ProcessIdentityObservation = {
+      state: "readable",
+      identity: "start:902",
+      lifecycle: { state: "observed", lifecycle: "non-zombie" },
+      relation: { state: "observed", parentPid: 1, processGroupId: 902 },
+    };
+    let tokenReads = 0;
+    let readsAfterLastToken = 0;
+    const host: ProcessOwnershipHost = {
+      platform: "linux",
+      listProcesses: async () => [row], // stale snapshot must never prove exit
+      environment: async () => {
+        tokenReads += 1;
+        throw Object.assign(new Error("ESRCH: open '/proc/902/environ'"), {
+          code: "ESRCH",
+        });
+      },
+      processIdentities: async (members) =>
+        new Map<number, ProcessIdentityObservation>(
+          members.map(({ pid }) => {
+            if (tokenReads < 4 || ++readsAfterLastToken < 3)
+              return [pid, live] as const;
+            switch (lastIdentity) {
+              case "absent":
+                return [
+                  pid,
+                  {
+                    state: "absent" as const,
+                    reason: "not-found-in-caller-pid-namespace",
+                  },
+                ] as const;
+              case "reused":
+                return [
+                  pid,
+                  { ...live, identity: "start:replacement" },
+                ] as const;
+              case "reused-zombie":
+                return [
+                  pid,
+                  {
+                    ...live,
+                    identity: "start:zombie-replacement",
+                    lifecycle: {
+                      state: "observed" as const,
+                      lifecycle: "zombie" as const,
+                    },
+                  },
+                ] as const;
+              case "unknown":
+                return [
+                  pid,
+                  {
+                    state: "unavailable" as const,
+                    reason: "native identity permission denied",
+                  },
+                ] as const;
+              default:
+                return [pid, live] as const;
+            }
+          }),
+        ),
+      signalGroup: vi.fn(),
+    };
+    const result = await verifyNoTokenOwnedProcesses("run-token", host);
+    expect(tokenReads).toBe(4);
+    if (lastIdentity === "absent")
+      expect(result).toEqual({ cleaned: true, signaled: false });
+    else
+      expect(result).toMatchObject({
+        cleaned: false,
+        failures: [
+          {
+            pid: 902,
+            reason: lastIdentity.startsWith("reused")
+              ? "process-identity-unavailable"
+              : "environment-unreadable",
+          },
+        ],
+      });
+    expect(host.signalGroup).not.toHaveBeenCalled();
   },
 );

@@ -1634,6 +1634,47 @@ const scanWithOwnershipEvidence = async (
     facts = facts.map((fact) => retryByPid.get(fact.process.pid) ?? fact);
   }
 
+  // The final run-token retry can still race with exit after its last native
+  // identity read. Before classifying a live-token failure, corroborate
+  // ENOENT/ESRCH with a fresh native observation. A changed PID generation,
+  // even one already a zombie, is not evidence that the original is gone.
+  if ((host.platform ?? process.platform) === "linux") {
+    const vanishedTokenRows = facts
+      .filter(
+        ({ token, identityAfter }) =>
+          token.state === "unavailable" &&
+          /^(?:ENOENT|ESRCH):/u.test(token.reason) &&
+          !processIdentityHasExited(identityAfter),
+      )
+      .map(({ process }) => process);
+    if (vanishedTokenRows.length > 0) {
+      const confirmed = await readNativeProcessIdentityMap(
+        vanishedTokenRows,
+        host,
+      );
+      facts = facts.map((fact) => {
+        const after = confirmed.get(fact.process.pid);
+        if (after?.state === "absent")
+          return { ...fact, state: "absent" as const, identityAfter: after };
+        const previous = fact.identityAfter;
+        if (previous.state !== "readable" || after?.state !== "readable")
+          return fact;
+        if (previous.identity !== after.identity)
+          return {
+            ...fact,
+            state: "unavailable" as const,
+            identityAfter: {
+              state: "unavailable" as const,
+              reason: "process_identity_changed_during_final_token_exit_check",
+            },
+          };
+        if (processIdentityHasExited(after))
+          return { ...fact, identityAfter: after };
+        return fact;
+      });
+    }
+  }
+
   const processGroupIds = new Set<number>([
     ...(relation === undefined ? [] : [relation.processGroupId]),
     ...(relation?.sampledProcessGroupIds ?? []),
