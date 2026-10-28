@@ -889,10 +889,56 @@ export const readProcessOwnershipFacts = async (
     signal,
     credentialPids,
   );
+  // An ENOENT/ESRCH environment failure can race with process exit while
+  // /proc/PID/stat is still readable. Do not treat the token error itself as
+  // proof of exit: ask the native identity owner again, which corroborates a
+  // missing procfs entry with signal-zero ESRCH. Keep the previous live
+  // observation if the refresh is unreadable; PID reuse remains a mismatch.
+  let finalObservedAfter = observedAfter;
+  if ((host.platform ?? process.platform) === "linux") {
+    const disappearing = processes.filter(({ pid }) => {
+      const token = tokens.get(pid);
+      return (
+        token?.state === "unavailable" &&
+        /^(?:ENOENT|ESRCH):/u.test(token.reason) &&
+        observedAfter.get(pid)?.state === "readable"
+      );
+    });
+    if (disappearing.length > 0) {
+      const refreshed = await readIdentityFacts(
+        disappearing,
+        host,
+        "after",
+        signal,
+        credentialPids,
+      );
+      const confirmed = new Map(observedAfter);
+      for (const { pid } of disappearing) {
+        const before = observedAfter.get(pid);
+        const after = refreshed.get(pid);
+        if (after?.state === "absent") {
+          confirmed.set(pid, after);
+        } else if (
+          before?.state === "readable" &&
+          after?.state === "readable"
+        ) {
+          // A recycled PID (including a zombie replacement) is not proof of
+          // the original process exit. Keep its ownership unresolved.
+          if (before.identity !== after.identity)
+            confirmed.set(pid, {
+              state: "unavailable",
+              reason: "process_identity_changed_during_environment_exit_check",
+            });
+          else if (processIdentityHasExited(after)) confirmed.set(pid, after);
+        }
+      }
+      finalObservedAfter = confirmed;
+    }
+  }
   const identityAfter = await settleExitingProcessIdentities(
     processes,
     host,
-    observedAfter,
+    finalObservedAfter,
     signal,
     options.exitSettlement,
     credentialPids,
@@ -934,7 +980,7 @@ export const readProcessOwnershipFacts = async (
   };
   const facts = processes.map((process): ProcessOwnershipFact => {
     const after = identityAfter.get(process.pid);
-    const original = observedAfter.get(process.pid);
+    const original = finalObservedAfter.get(process.pid);
     const fact = deriveFact(process, after);
     return after === original
       ? fact
