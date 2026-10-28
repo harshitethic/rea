@@ -362,4 +362,5 @@ const isSafeExecutableName = (name: string): boolean =>
   name !== "." &&
   name !== ".." &&
   !name.includes("\0") &&
-  !/[/\\]/u.test(name);
+  !name.includes("/") &&
+  (process.platform !== "win32" || !name.includes("\\"));
