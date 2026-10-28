@@ -11,6 +11,7 @@ import { dirname, join } from "node:path";
 import { expect, onTestFinished, test, vi } from "vitest";
 
 import { AdbProvider } from "../../../../src/adb/AdbProvider.js";
+import { projectAnalysisError } from "../../../../src/domain/analysisErrorProjection.js";
 import { AdbDeviceAnalysisService } from "../../../../src/application/adb/AdbDeviceAnalysisService.js";
 import { PrivateRuntimeRoot } from "../../../../src/process/PrivateRuntimeRoot.js";
 import { createTestTempDirectory } from "../../../fixtures/temporaryDirectory.js";
@@ -25,6 +26,46 @@ const png = Buffer.from(
 );
 const digest = (bytes: string | Buffer) =>
   createHash("sha256").update(bytes).digest("hex");
+
+it.each(["push_adb_file", "install_adb_package"] as const)(
+  "reports selected missing and directory local-file inputs for %s",
+  async (operation) => {
+    const f = await fixture();
+    const field = operation === "push_adb_file" ? "local_path" : "apk_path";
+    for (const kind of ["missing", "directory"] as const) {
+      const selected =
+        kind === "missing" ? join(f.root, "missing.apk") : f.root;
+      const input =
+        operation === "push_adb_file"
+          ? {
+              serial: "fixture",
+              local_path: selected,
+              device_path: "/data/local/tmp/test",
+              overwrite: false,
+            }
+          : { serial: "fixture", apk_path: selected, replace: false };
+      const result = await f.service.execute(operation, input);
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error("Expected local input refusal");
+      expect(projectAnalysisError(result.error)).toMatchObject({
+        code: "invalid_request",
+        category: "invalid_input",
+        details: {
+          issues: [
+            {
+              path: [field],
+              reason: "invalid_value",
+              observed: {
+                path: selected,
+                kind: kind === "missing" ? "missing" : "not-regular-file",
+              },
+            },
+          ],
+        },
+      });
+    }
+  },
+);
 
 it.each(["path", "explicit"] as const)(
   "uses the captured %s launcher environment for both ADB probing and device queries",
