@@ -11,7 +11,12 @@ import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
 
 const failure = vi.hoisted(() => ({
   parent: undefined as string | undefined,
-  kind: undefined as "directory" | "content" | "destination" | undefined,
+  kind: undefined as
+    | "directory"
+    | "content"
+    | "destination"
+    | "file-size"
+    | undefined,
 }));
 vi.mock("node:fs/promises", async (importOriginal) => {
   const filesystem = await importOriginal<typeof import("node:fs/promises")>();
@@ -36,7 +41,17 @@ vi.mock("node:fs/promises", async (importOriginal) => {
         dirname(dirname(String(args[0]))) === failure.parent
       )
         throw pathFailure();
-      return filesystem.open(...args);
+      const handle = await filesystem.open(...args);
+      if (
+        failure.kind === "file-size" &&
+        dirname(dirname(String(args[0]))) === failure.parent
+      )
+        vi.spyOn(handle, "writeFile").mockRejectedValue(
+          Object.assign(new Error("controlled file-size limit"), {
+            code: "EFBIG",
+          }),
+        );
+      return handle;
     },
     realpath: async (...args: Parameters<typeof filesystem.realpath>) => {
       if (failure.kind === "destination" && String(args[0]) === failure.parent)
@@ -102,6 +117,40 @@ it("reports an actual selected-parent pathname refusal as a filesystem resource 
         retryable: false,
         details: { reason: "path-limit", boundary: "filesystem-path" },
       });
+    expect(await readdir(root)).toEqual([]);
+  } finally {
+    failure.kind = undefined;
+    failure.parent = undefined;
+  }
+});
+
+it("reports an actual file-size refusal as an explicit resource constraint", async () => {
+  const root = await createTestTempDirectory("rea-file-size-capacity-");
+  const resources = new ArtifactResourceScope();
+  onTestFinished(() => resources.close());
+  failure.parent = await realpath(root);
+  failure.kind = "file-size";
+  try {
+    const result = await writeTextParts(
+      ["fixture evidence bytes"],
+      join(root, "out.json"),
+      false,
+      resources,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const projected = projectAnalysisError(result.error);
+      expect(projected).toMatchObject({
+        code: "resource_constraint",
+        category: "resource_constraint",
+        retryable: false,
+        details: {
+          reason: "file-size-limit",
+          boundary: "filesystem-file-size",
+        },
+      });
+      expect(projected.message).toContain("file-size limit");
+    }
     expect(await readdir(root)).toEqual([]);
   } finally {
     failure.kind = undefined;
