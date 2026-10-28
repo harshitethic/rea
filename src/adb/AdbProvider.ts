@@ -2471,9 +2471,29 @@ export class AdbProvider {
     );
     if (info === null || !info.isFile())
       return err(
-        new AnalysisInputError(operation, {
-          cause: new Error(`The local file does not exist: ${localPath}`),
-        }),
+        new AnalysisInputError(
+          operation,
+          {
+            userMessage:
+              "The selected local_path must be an existing regular local file.",
+            remediationAction:
+              "Select an existing regular file for local_path and retry; directory paths are not valid.",
+          },
+          [
+            {
+              path: ["local_path"],
+              reason: "invalid_value",
+              message:
+                info === null
+                  ? "Selected local file is missing or inaccessible"
+                  : "Selected local path is not a regular file",
+              observed: {
+                path: input.local_path,
+                kind: info === null ? "missing" : "not-regular-file",
+              },
+            },
+          ],
+        ),
       );
     return this.#withRuntimeRoot(
       operation,
@@ -2677,9 +2697,29 @@ export class AdbProvider {
     );
     if (info === null || !info.isFile())
       return err(
-        new AnalysisInputError(operation, {
-          cause: new Error(`The local APK does not exist: ${apkPath}`),
-        }),
+        new AnalysisInputError(
+          operation,
+          {
+            userMessage:
+              "The selected apk_path must be an existing regular local file.",
+            remediationAction:
+              "Select an existing regular file for apk_path and retry; directory paths are not valid.",
+          },
+          [
+            {
+              path: ["apk_path"],
+              reason: "invalid_value",
+              message:
+                info === null
+                  ? "Selected local file is missing or inaccessible"
+                  : "Selected local path is not a regular file",
+              observed: {
+                path: input.apk_path,
+                kind: info === null ? "missing" : "not-regular-file",
+              },
+            },
+          ],
+        ),
       );
     return this.#withRuntimeRoot(
       operation,
