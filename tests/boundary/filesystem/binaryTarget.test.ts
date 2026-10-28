@@ -855,6 +855,29 @@ describe("binary target I/O: explicit kinds and executable headers", () => {
   });
 });
 
+it.skipIf(process.platform === "win32")(
+  "admits a POSIX app executable whose literal name contains a backslash",
+  async () => {
+    const root = await createTestTempDirectory("rea-backslash-app-");
+    const app = join(root, "Back.app");
+    const executableName = "App\\Name";
+    const bin = join(app, "Contents", "MacOS", executableName);
+    await mkdir(join(app, "Contents", "MacOS"), { recursive: true });
+    await writeFile(
+      join(app, "Contents", "Info.plist"),
+      "<plist><dict><key>CFBundleExecutable</key><string>" +
+        executableName +
+        "</string></dict></plist>",
+    );
+    await writeFile(bin, thinMach(0xfeedfacf, 0x0100000c));
+    const result = await parseBinaryTarget(app, { hostArchitecture: "arm64" });
+    expect(result).toMatchObject({
+      ok: true,
+      value: { path: await realpath(bin), format: "mach-o" },
+    });
+  },
+);
+
 describe("app executable filename fidelity", () => {
   it.each([" leading", "trailing ", " both "])(
     "preserves executable filename whitespace in an XML plist: %j",
