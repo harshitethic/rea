@@ -153,6 +153,34 @@ const selectionRefusal = (
   expect(error?.message).toContain(issue?.message);
 };
 
+it.each([false, true])(
+  "retains an already-published Evidence receipt when JSONL refuses a summary (fullOutput=%s)",
+  async (fullOutput) => {
+    const receipt = { path: "/tmp/fixture-matching-evidence.json", bytes: 134 };
+    const stream = capture([
+      "--format",
+      "jsonl",
+      ...(fullOutput ? ["--full-output"] : []),
+    ]);
+    await stream.output.write(
+      { summary: { total: 1 }, evidence_bundle: receipt },
+      { command: "match-native-functions", duration: "1ms", format: "jsonl" },
+    );
+    const error = stream.output.error;
+    expect(error).toMatchObject({
+      code: "invalid_request",
+      category: "invalid_input",
+      details: {
+        evidence_bundle: receipt,
+        issues: [{ path: ["format"], reason: "invalid_value" }],
+      },
+    });
+    const [record] = lines(stream.text()) as { result: unknown }[];
+    expect(JSON.stringify(record)).toContain(receipt.path);
+    expect(JSON.stringify(record)).toContain(String(receipt.bytes));
+  },
+);
+
 describe("JSON Lines selection refusals", () => {
   it.each<[unknown, Observed]>([
     [null, [at("null")]],
