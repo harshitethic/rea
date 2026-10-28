@@ -162,6 +162,21 @@ describe("IL2CPP global-metadata version 39", () => {
   });
 });
 
+describe("fixed-layout IL2CPP interface-offset integrity", () => {
+  it.each([24, 27, 29, 31] as const)(
+    "rejects a partial interface-offset row in metadata version %i",
+    (version) => {
+      const fixture = createIl2cppMetadataFixture({ version });
+      expect(readIl2cppMetadata(fixture.bytes).metadata_version).toBe(version);
+      const damaged = Buffer.from(fixture.bytes);
+      damaged.writeInt32LE(6, fixture.header("interfaceOffsets", "size"));
+      rejects(damaged, "record-size-mismatch");
+      const linked = failure(damaged, readIl2cppMetadataForLinking);
+      expect(linked.reason).toBe("record-size-mismatch");
+    },
+  );
+});
+
 describe("rejected IL2CPP global-metadata", () => {
   it("rejects an unrecognized magic and other versions as unsupported", () => {
     rejects(
