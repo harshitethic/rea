@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createEvidence } from "./evidence.js";
+import { projectAnalysisError } from "./analysisErrorProjection.js";
 import { ANALYSIS_SNAPSHOT_TARGET } from "./analysisSnapshot.fixture.js";
 import {
   createEvidenceBundle,
@@ -8,6 +9,7 @@ import {
   NonCanonicalEvidenceBundleError,
   evidenceBundleForTarget,
   parseEvidenceBundle,
+  readEvidenceBundle,
   safeParseEvidenceBundle,
 } from "./evidenceBundle.js";
 import {
@@ -126,6 +128,33 @@ const makeUnknown = (
     unknown: createResidualUnknown(input, mutation.evidence_id, scopeDigest),
   };
 };
+
+it("distinguishes a valid standalone Evidence record from a corrupt bundle at the inline reader", () => {
+  const record = createEvidence(undefined, provider, {
+    operation: "observe",
+    parameters: {},
+    result: { expected: "intact" },
+  });
+  const single = readEvidenceBundle(record);
+  expect(single.ok).toBe(false);
+  if (single.ok) throw new Error("Expected wrong-kind bundle");
+  expect(projectAnalysisError(single.error)).toMatchObject({
+    code: "invalid_request",
+    category: "invalid_input",
+    details: { operation: "read", reason: "wrong-kind" },
+    message: expect.stringContaining("one Evidence record"),
+  });
+  const tampered = readEvidenceBundle({
+    ...record,
+    normalized_result: { expected: "tampered" },
+  });
+  expect(tampered.ok).toBe(false);
+  if (tampered.ok) throw new Error("Expected integrity refusal");
+  expect(projectAnalysisError(tampered.error)).toMatchObject({
+    code: "evidence_integrity_mismatch",
+    category: "integrity_mismatch",
+  });
+});
 
 describe("evidenceBundleForTarget", () => {
   it("retains mutation evidence from other targets for complete revision histories", () => {
