@@ -88,6 +88,37 @@ it("has a hint for every reason the state view reports for a withheld write", ()
     expect(hint.length).toBeGreaterThan(0);
 });
 
+it("does not misdiagnose missing reads when the write has no supported route target", () => {
+  const views: StateView[] = [
+    {
+      tool: "list_folders",
+      shape: "list",
+      type: "folder",
+      checked_record_ordinals: [],
+    },
+    {
+      tool: "get_folder_by_id",
+      shape: "document",
+      checked_record_ordinals: [],
+    },
+  ] as StateView[];
+  const withheld = summarizeEnvironmentCoverage({
+    views,
+    writes: [
+      plan("delete_folders_literal", "no-state-target", {
+        effect: "none",
+        target: null,
+      }),
+    ],
+  }).writes.withheld;
+  expect(withheld).toHaveLength(1);
+  expect(withheld[0]).toMatchObject({ reason: "no-state-target" });
+  expect(withheld[0]?.hint).toContain("unsupported route");
+  expect(withheld[0]?.hint).not.toContain(
+    "The write's path names no collection or item the capture reads.",
+  );
+});
+
 it("counts read tools by how they answer and lists writes as served or withheld with hints", () => {
   const views: StateView[] = [
     { tool: "get_folders", shape: "document", checked_record_ordinals: [] },
